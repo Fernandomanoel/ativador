@@ -10,6 +10,8 @@ export interface User {
   cover?: string; // capa do perfil: foto ou GIF
   isPrivate: boolean;
   joinedAt: string;
+  /** Contagens calculadas pelo servidor (as listas de contas privadas não vêm para quem não segue). */
+  stats?: { followers: number; following: number };
 }
 
 export interface Book {

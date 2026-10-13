@@ -4,7 +4,7 @@
 
 > Logo: uma maçã cunhada numa moeda de prata (`components/Logo.tsx`, `public/icon.svg`).
 
-Esta é a **fase 1: o front-end**. É um protótipo navegável com dados de exemplo, e tudo o que você faz fica salvo no próprio navegador (`localStorage`). O back-end vem na fase 2 (veja abaixo).
+O app tem **contas reais** (login com Google/Gmail e Facebook), banco de dados Postgres e as regras de privacidade aplicadas no servidor. Para ligar o login e o banco na Vercel, siga **[docs/LOGIN.md](docs/LOGIN.md)**. Enquanto não estiver configurado, o site abre em **modo demonstração**, com dados de exemplo salvos no próprio navegador (o mesmo modo da prévia no claude.ai).
 
 ## O que já funciona
 
@@ -44,12 +44,12 @@ Ela é gerada a partir deste mesmo código por `npm run preview:build`, que mont
 
 ```bash
 npm install
-npm run dev        # http://localhost:3000
+VIVLIO_TEST_CODE=teste npm run dev   # http://localhost:3000
 ```
 
-Outros comandos: `npm run build`, `npm run typecheck`.
+Sem `DATABASE_URL`, o desenvolvimento usa um Postgres embutido gravado em `.data/`. Entre com o "acesso de teste" (nome + código `teste`) em duas janelas para simular duas pessoas.
 
-Em **Configurações → Restaurar dados de exemplo** você volta ao estado inicial.
+Outros comandos: `npm run build`, `npm run typecheck`, `npm run preview:build`.
 
 ## Estrutura
 
@@ -65,12 +65,18 @@ app/                  páginas (Next.js App Router)
   clubes/             clubes de leitura (lista, criar, página do clube, configurar)
   configuracoes/      perfil e privacidade
 components/           Shelf, Cover, Spine, PostCard, ReviewCard, ReadingCard, Annotations, ClubParts, ClubForm, Logo…
-lib/                  tipos, regras de privacidade (selectors.ts), estado (store.tsx), dados de exemplo
-docs/schema.prisma    modelo de dados planejado para o back-end
+  api/                login (auth), state, action, media
+auth.ts               login com Auth.js: Google, Facebook e acesso de teste
+lib/logic.ts          regras do app (mesmo código no navegador e no servidor)
+lib/server/           banco (db.ts), validação (validate.ts), dados e privacidade (world.ts)
+lib/                  tipos, seletores de privacidade, estado do app (store.tsx), dados de exemplo
+docs/LOGIN.md         como ligar login e banco na Vercel
+docs/schema.prisma    modelo de tabelas para a próxima etapa
 ```
 
-## Próximos passos (fase 2: back-end)
+## Próximos passos
 
-- Contas reais (cadastro e login), banco de dados (o esquema já está em `docs/schema.prisma`) e upload de fotos num storage.
-- Levar para o servidor as mesmas regras de `lib/selectors.ts` e `lib/store.tsx`: bilhete único, resposta única, responder ≠ aceitar, notas privadas, limite de 50 membros e esconder no servidor o conteúdo de posts com spoiler (hoje ele só fica borrado na tela).
+- Passar os dados do documento JSON para tabelas separadas (desenho em `docs/schema.prisma`) quando houver mais gente que os grupos de teste.
+- Esconder no servidor o conteúdo de posts com spoiler (hoje ele chega ao navegador e fica borrado na tela).
+- Atualização em tempo real (hoje o app busca novidades a cada 20 segundos e ao voltar para a aba).
 - Vídeos curtos nas publicações.

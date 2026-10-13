@@ -1,18 +1,26 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Login, type LoginInfo } from "@/components/Login";
 import { CoinMark } from "@/components/Logo";
-import { CLUB_MAX, NOTE_MAX } from "./constants";
+import { authPost } from "./authClient";
+import { runOp, type ClubInput, type ClubPostInput, type EntryInput, type OpArgs, type OpName, type PostInput, type ProfilePatch } from "./logic";
 import { makeSeed, STATE_VERSION } from "./seed";
-import { canModerate, clubById, clubIsFull, hasClubRequest, hasRequested, isFollowing, memberOf, noteBetween, userById } from "./selectors";
-import type { Annotation, Book, Club, ClubPost, ClubRole, Entry, Notif, NotifType, Post, State, User } from "./types";
-import { nowIso, uid } from "./util";
+import { userById } from "./selectors";
+import type { Annotation, Book, ClubRole, State, User } from "./types";
+import { uid } from "./util";
+
+export type { ClubInput, ClubPostInput } from "./logic";
 
 const KEY = "vivlio:state";
+const POLL_MS = 20_000;
 
-type EntryInput = Omit<Entry, "id" | "userId" | "position" | "createdAt" | "updatedAt" | "notes" | "likes" | "comments">;
-export type ClubInput = Omit<Club, "id" | "ownerId" | "createdAt">;
-export type ClubPostInput = Pick<ClubPost, "clubId" | "area" | "title" | "body" | "image" | "bookId" | "page" | "rating" | "spoiler">;
+/**
+ * - "server": contas reais; cada ação vai para /api/action e o servidor decide.
+ * - "demo": dados de exemplo salvos no navegador (prévia no claude.ai, ou quando
+ *   o servidor ainda não foi configurado).
+ */
+export type Mode = "server" | "demo";
 
 export interface Actions {
   follow(targetId: string, noteBody?: string): void;
@@ -52,24 +60,28 @@ export interface Actions {
   toggleClubPostPin(postId: string): void;
   toggleClubPostResolved(postId: string): void;
   replyClubPost(postId: string, body: string): void;
-  createPost(p: Pick<Post, "image" | "caption" | "bookId">): string;
+  createPost(p: PostInput): string;
   deletePost(postId: string): void;
-  updateProfile(patch: Partial<Pick<User, "name" | "username" | "bio" | "avatar" | "cover" | "isPrivate">>): string | null;
+  updateProfile(patch: ProfilePatch): string | null;
   markAllRead(): void;
   reset(): void;
+  signOut(): void;
   toast(msg: string): void;
 }
 
 interface Ctx {
   state: State;
   me: User;
+  mode: Mode;
+  /** Quando o servidor existe mas falta configuração (mostrado como aviso no modo demonstração). */
+  setupMissing: string[];
   actions: Actions;
   toasts: { id: string; msg: string }[];
 }
 
 const StoreContext = createContext<Ctx | null>(null);
 
-function load(): State {
+function loadDemo(): State {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
@@ -82,33 +94,22 @@ function load(): State {
   return makeSeed();
 }
 
-function notif(s: State, to: string, type: NotifType, extra: Partial<Notif> = {}): Notif[] {
-  if (to === s.meId && extra.actor === s.meId) return s.notifs;
-  return [{ id: uid(), to, actor: s.meId, type, createdAt: nowIso(), read: false, ...extra }, ...s.notifs];
-}
+// undefined some no JSON; null avisa o servidor para apagar o campo (ex.: tirar a capa).
+const toJson = (v: unknown) => JSON.stringify(v, (_k, x) => (x === undefined ? null : x));
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<State | null>(null);
+  const [mode, setMode] = useState<Mode>("demo");
+  const [login, setLogin] = useState<LoginInfo | null>(null);
+  const [setupMissing, setSetupMissing] = useState<string[]>([]);
   const [toasts, setToasts] = useState<{ id: string; msg: string }[]>([]);
   const saveWarned = useRef(false);
   const stateRef = useRef<State | null>(null);
+  const modeRef = useRef<Mode>("demo");
+  const pending = useRef(0);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
   stateRef.current = state;
-
-  useEffect(() => {
-    setState(load());
-  }, []);
-
-  useEffect(() => {
-    if (!state) return;
-    try {
-      localStorage.setItem(KEY, JSON.stringify(state));
-    } catch {
-      if (!saveWarned.current) {
-        saveWarned.current = true;
-        setToasts((t) => [...t, { id: uid(), msg: "Armazenamento do navegador cheio — algumas fotos podem não ficar salvas." }]);
-      }
-    }
-  }, [state]);
+  modeRef.current = mode;
 
   const toast = useCallback((msg: string) => {
     const id = uid();
@@ -116,398 +117,149 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
   }, []);
 
-  const update = useCallback((fn: (s: State) => State) => setState((s) => (s ? fn(s) : s)), []);
+  const startDemo = useCallback((missing: string[] = []) => {
+    setSetupMissing(missing);
+    setMode("demo");
+    setState(loadDemo());
+  }, []);
+
+  const fetchState = useCallback(async () => {
+    const res = await fetch("/api/state", { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.state) {
+      setLogin(null);
+      setMode("server");
+      if (pending.current === 0) setState(data.state as State);
+      return;
+    }
+    if (res.status === 401) {
+      setState(null);
+      setLogin({ providers: data.providers ?? {}, error: new URLSearchParams(location.search).get("error") });
+      return;
+    }
+    if (res.status === 503) return startDemo(data.missing ?? []);
+    throw new Error(`HTTP ${res.status}`);
+  }, [startDemo]);
+
+  // Começo: prévia publicada → demonstração; senão pergunta ao servidor.
+  useEffect(() => {
+    if ((window as { __VIVLIO_DEMO__?: boolean }).__VIVLIO_DEMO__) return startDemo();
+    fetchState().catch(() => startDemo());
+  }, [fetchState, startDemo]);
+
+  // Modo demonstração: salva no navegador.
+  useEffect(() => {
+    if (!state || mode !== "demo") return;
+    try {
+      localStorage.setItem(KEY, JSON.stringify(state));
+    } catch {
+      if (!saveWarned.current) {
+        saveWarned.current = true;
+        toast("Armazenamento do navegador cheio — algumas fotos podem não ficar salvas.");
+      }
+    }
+  }, [state, mode, toast]);
+
+  // Contas reais: busca novidades da outra pessoa de tempos em tempos.
+  useEffect(() => {
+    if (mode !== "server") return;
+    const tick = () => document.visibilityState === "visible" && pending.current === 0 && fetchState().catch(() => {});
+    const timer = setInterval(tick, POLL_MS);
+    window.addEventListener("focus", tick);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", tick);
+    };
+  }, [mode, fetchState]);
+
+  /** Aplica a ação na hora (para a tela responder rápido) e, com contas reais, confirma no servidor. */
+  const run = useCallback(
+    <N extends OpName>(name: N, args: OpArgs<N>): { error?: string; value?: string } => {
+      const cur = stateRef.current;
+      if (!cur) return { error: "Carregando…" };
+      const out = runOp(cur, name, args);
+      if (out.error) return { error: out.error };
+      stateRef.current = out.state;
+      setState(out.state);
+      if (modeRef.current === "server") {
+        pending.current++;
+        queue.current = queue.current
+          .then(async () => {
+            const res = await fetch("/api/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: toJson({ name, args }) });
+            const data = await res.json().catch(() => ({}));
+            pending.current--;
+            if (res.status === 401) return fetchState();
+            if (!res.ok || data.error) {
+              toast(data.error || "Não foi possível salvar. Tente de novo.");
+              if (pending.current === 0) await fetchState().catch(() => {});
+              return;
+            }
+            if (pending.current === 0 && data.state) setState(data.state as State);
+          })
+          .catch(() => {
+            pending.current = Math.max(0, pending.current - 1);
+            toast("Sem conexão com o servidor. A última ação pode não ter sido salva.");
+          });
+      }
+      return { value: out.value };
+    },
+    [fetchState, toast],
+  );
 
   const actions = useMemo<Actions>(() => {
-    // Lê o estado mais recente para validar ações que devolvem erro.
-    const peek = () => stateRef.current;
-
+    const id = (prefix: string) => prefix + uid();
+    /** Para ações que devolvem mensagem de erro (ou null quando deu certo). */
+    const err = <N extends OpName>(name: N, args: OpArgs<N>) => run(name, args).error ?? null;
+    /** Para ações que criam algo e devolvem o id. */
+    const val = <N extends OpName>(name: N, args: OpArgs<N>) => run(name, args).value ?? "";
     return {
       toast,
-      follow(targetId, noteBody) {
-        update((s) => {
-          const target = userById(s, targetId);
-          if (!target || targetId === s.meId) return s;
-          if (isFollowing(s, s.meId, targetId) || hasRequested(s, s.meId, targetId)) return s;
-          if (!target.isPrivate) {
-            return { ...s, follows: [...s.follows, { from: s.meId, to: targetId, createdAt: nowIso() }], notifs: notif(s, targetId, "follow") };
-          }
-          let next: State = {
-            ...s,
-            requests: [...s.requests, { from: s.meId, to: targetId, createdAt: nowIso() }],
-            notifs: notif(s, targetId, "follow_request"),
-          };
-          const body = noteBody?.trim().slice(0, NOTE_MAX);
-          if (body && !noteBetween(s, s.meId, targetId)) {
-            next = {
-              ...next,
-              notes: [...next.notes, { id: uid(), from: s.meId, to: targetId, body, createdAt: nowIso() }],
-              notifs: notif(next, targetId, "note"),
-            };
-          }
-          return next;
-        });
-      },
-      unfollow(targetId) {
-        update((s) => ({ ...s, follows: s.follows.filter((f) => !(f.from === s.meId && f.to === targetId)) }));
-      },
-      cancelRequest(targetId) {
-        update((s) => ({ ...s, requests: s.requests.filter((r) => !(r.from === s.meId && r.to === targetId)) }));
-      },
-      acceptRequest(fromId) {
-        update((s) => {
-          if (!hasRequested(s, fromId, s.meId)) return s;
-          return {
-            ...s,
-            requests: s.requests.filter((r) => !(r.from === fromId && r.to === s.meId)),
-            follows: [...s.follows, { from: fromId, to: s.meId, createdAt: nowIso() }],
-            notifs: notif(s, fromId, "follow_accepted").map((n) =>
-              n.type === "follow_request" && n.actor === fromId && n.to === s.meId ? { ...n, read: true } : n,
-            ),
-          };
-        });
-      },
-      rejectRequest(fromId) {
-        update((s) => ({ ...s, requests: s.requests.filter((r) => !(r.from === fromId && r.to === s.meId)) }));
-      },
-      removeFollower(userId) {
-        update((s) => ({ ...s, follows: s.follows.filter((f) => !(f.from === userId && f.to === s.meId)) }));
-      },
-      sendNote(toId, body) {
-        const s = peek();
-        if (!s) return "Carregando…";
-        const target = userById(s, toId);
-        const text = body.trim();
-        if (!target) return "Leitor não encontrado.";
-        if (!target.isPrivate) return "Bilhetes são para contas privadas.";
-        if (isFollowing(s, s.meId, toId)) return "Você já segue esta pessoa.";
-        if (noteBetween(s, s.meId, toId)) return "Você já enviou o seu bilhete para esta pessoa.";
-        if (!text) return "Escreva alguma coisa.";
-        if (text.length > NOTE_MAX) return `Máximo de ${NOTE_MAX} caracteres.`;
-        update((st) => ({
-          ...st,
-          notes: [...st.notes, { id: uid(), from: st.meId, to: toId, body: text, createdAt: nowIso() }],
-          notifs: notif(st, toId, "note"),
-        }));
-        return null;
-      },
-      replyNote(noteId, body) {
-        const s = peek();
-        if (!s) return "Carregando…";
-        const note = s.notes.find((n) => n.id === noteId);
-        const text = body.trim();
-        if (!note || note.to !== s.meId) return "Bilhete não encontrado.";
-        if (note.reply) return "Você já respondeu este bilhete.";
-        if (!text) return "Escreva alguma coisa.";
-        if (text.length > NOTE_MAX) return `Máximo de ${NOTE_MAX} caracteres.`;
-        update((st) => ({
-          ...st,
-          notes: st.notes.map((n) => (n.id === noteId ? { ...n, reply: text, repliedAt: nowIso() } : n)),
-          notifs: notif(st, note.from, "note_reply"),
-        }));
-        return null;
-      },
-      togglePostLike(postId) {
-        update((s) => {
-          const post = s.posts.find((p) => p.id === postId);
-          if (!post) return s;
-          const liked = post.likes.includes(s.meId);
-          return {
-            ...s,
-            posts: s.posts.map((p) => (p.id === postId ? { ...p, likes: liked ? p.likes.filter((x) => x !== s.meId) : [...p.likes, s.meId] } : p)),
-            notifs: liked || post.authorId === s.meId ? s.notifs : notif(s, post.authorId, "like_post", { postId }),
-          };
-        });
-      },
-      addPostComment(postId, body) {
-        const text = body.trim();
-        if (!text) return;
-        update((s) => {
-          const post = s.posts.find((p) => p.id === postId);
-          if (!post) return s;
-          return {
-            ...s,
-            posts: s.posts.map((p) => (p.id === postId ? { ...p, comments: [...p.comments, { id: uid(), authorId: s.meId, body: text, createdAt: nowIso() }] } : p)),
-            notifs: post.authorId === s.meId ? s.notifs : notif(s, post.authorId, "comment_post", { postId }),
-          };
-        });
-      },
-      toggleReviewLike(entryId) {
-        update((s) => {
-          const entry = s.entries.find((e) => e.id === entryId);
-          if (!entry) return s;
-          const liked = entry.likes.includes(s.meId);
-          return {
-            ...s,
-            entries: s.entries.map((e) => (e.id === entryId ? { ...e, likes: liked ? e.likes.filter((x) => x !== s.meId) : [...e.likes, s.meId] } : e)),
-            notifs: liked || entry.userId === s.meId ? s.notifs : notif(s, entry.userId, "like_review", { entryId }),
-          };
-        });
-      },
-      addReviewComment(entryId, body) {
-        const text = body.trim();
-        if (!text) return;
-        update((s) => {
-          const entry = s.entries.find((e) => e.id === entryId);
-          if (!entry) return s;
-          return {
-            ...s,
-            entries: s.entries.map((e) => (e.id === entryId ? { ...e, comments: [...e.comments, { id: uid(), authorId: s.meId, body: text, createdAt: nowIso() }] } : e)),
-            notifs: entry.userId === s.meId ? s.notifs : notif(s, entry.userId, "comment_review", { entryId }),
-          };
-        });
-      },
-      addBook(book) {
-        const id = "bk" + uid();
-        update((s) => ({ ...s, books: [...s.books, { ...book, id }] }));
-        return id;
-      },
-      addEntry(input) {
-        const s = peek();
-        const existing = s?.entries.find((e) => e.userId === s.meId && e.bookId === input.bookId);
-        if (existing) {
-          update((st) => ({ ...st, entries: st.entries.map((e) => (e.id === existing.id ? { ...e, ...input, updatedAt: nowIso() } : e)) }));
-          return existing.id;
-        }
-        const id = "e" + uid();
-        update((st) => {
-          // Livros novos entram no começo da estante.
-          const mine = st.entries.filter((e) => e.userId === st.meId);
-          const minPos = mine.reduce((m, e) => Math.min(m, e.position), 1);
-          const t = nowIso();
-          return {
-            ...st,
-            entries: [...st.entries, { ...input, id, userId: st.meId, position: minPos - 1, createdAt: t, updatedAt: t, notes: [], likes: [], comments: [] }],
-          };
-        });
-        return id;
-      },
-      updateEntry(id, patch) {
-        update((s) => ({ ...s, entries: s.entries.map((e) => (e.id === id && e.userId === s.meId ? { ...e, ...patch, updatedAt: nowIso() } : e)) }));
-      },
-      removeEntry(id) {
-        update((s) => ({ ...s, entries: s.entries.filter((e) => !(e.id === id && e.userId === s.meId)) }));
-      },
-      reorder(orderedIds) {
-        update((s) => {
-          const pos = new Map(orderedIds.map((id, i) => [id, i + 1]));
-          return { ...s, entries: s.entries.map((e) => (e.userId === s.meId && pos.has(e.id) ? { ...e, position: pos.get(e.id)! } : e)) };
-        });
-      },
-      addAnnotation(entryId, a) {
-        update((s) => ({
-          ...s,
-          entries: s.entries.map((e) => (e.id === entryId && e.userId === s.meId ? { ...e, notes: [...e.notes, { ...a, id: uid(), createdAt: nowIso() }].sort((x, y) => (x.page ?? 1e9) - (y.page ?? 1e9)) } : e)),
-        }));
-      },
-      removeAnnotation(entryId, annotationId) {
-        update((s) => ({
-          ...s,
-          entries: s.entries.map((e) => (e.id === entryId && e.userId === s.meId ? { ...e, notes: e.notes.filter((n) => n.id !== annotationId) } : e)),
-        }));
-      },
-      toggleAnnotationPrivacy(entryId, annotationId) {
-        update((s) => ({
-          ...s,
-          entries: s.entries.map((e) =>
-            e.id === entryId && e.userId === s.meId ? { ...e, notes: e.notes.map((n) => (n.id === annotationId ? { ...n, isPrivate: !n.isPrivate } : n)) } : e,
-          ),
-        }));
-      },
-      updateProgress(entryId, page) {
-        update((s) => ({
-          ...s,
-          entries: s.entries.map((e) => {
-            if (e.id !== entryId || e.userId !== s.meId) return e;
-            const pages = s.books.find((b) => b.id === e.bookId)?.pages;
-            const p = Math.max(0, Math.round(pages ? Math.min(page, pages) : page));
-            return { ...e, progress: p, updatedAt: nowIso() };
-          }),
-        }));
-      },
-      createClub(input) {
-        const id = "c" + uid();
-        update((s) => ({
-          ...s,
-          clubs: [...s.clubs, { ...input, maxMembers: Math.min(CLUB_MAX, Math.max(2, input.maxMembers)), id, ownerId: s.meId, createdAt: nowIso() }],
-          clubMembers: [...s.clubMembers, { clubId: id, userId: s.meId, role: "dono", joinedAt: nowIso() }],
-        }));
-        return id;
-      },
-      updateClub(clubId, patch) {
-        const s = peek();
-        if (!s) return "Carregando…";
-        if (!canModerate(s, clubId, s.meId)) return "Só a moderação pode alterar o clube.";
-        const count = s.clubMembers.filter((m) => m.clubId === clubId).length;
-        if (patch.maxMembers !== undefined) {
-          if (patch.maxMembers > CLUB_MAX) return `O limite máximo é ${CLUB_MAX} membros.`;
-          if (patch.maxMembers < count) return `O clube já tem ${count} membros; o limite não pode ser menor.`;
-        }
-        if (patch.areas && patch.areas.length === 0) return "Deixe pelo menos uma área ativa.";
-        update((st) => ({ ...st, clubs: st.clubs.map((c) => (c.id === clubId ? { ...c, ...patch } : c)) }));
-        return null;
-      },
-      deleteClub(clubId) {
-        update((s) => {
-          if (clubById(s, clubId)?.ownerId !== s.meId) return s;
-          return {
-            ...s,
-            clubs: s.clubs.filter((c) => c.id !== clubId),
-            clubMembers: s.clubMembers.filter((m) => m.clubId !== clubId),
-            clubRequests: s.clubRequests.filter((r) => r.clubId !== clubId),
-            clubPosts: s.clubPosts.filter((p) => p.clubId !== clubId),
-          };
-        });
-      },
-      joinClub(clubId) {
-        const s = peek();
-        if (!s) return "Carregando…";
-        const club = clubById(s, clubId);
-        if (!club) return "Clube não encontrado.";
-        if (memberOf(s, clubId, s.meId)) return "Você já participa deste clube.";
-        if (clubIsFull(s, clubId)) return `Clube cheio (${club.maxMembers}/${club.maxMembers}).`;
-        if (club.access === "aberto") {
-          update((st) => ({ ...st, clubMembers: [...st.clubMembers, { clubId, userId: st.meId, role: "membro", joinedAt: nowIso() }] }));
-          return null;
-        }
-        if (hasClubRequest(s, clubId, s.meId)) return "Pedido já enviado.";
-        update((st) => ({
-          ...st,
-          clubRequests: [...st.clubRequests, { clubId, userId: st.meId, createdAt: nowIso() }],
-          notifs: notif(st, club.ownerId, "club_request", { clubId }),
-        }));
-        return null;
-      },
-      cancelClubRequest(clubId) {
-        update((s) => ({ ...s, clubRequests: s.clubRequests.filter((r) => !(r.clubId === clubId && r.userId === s.meId)) }));
-      },
-      leaveClub(clubId) {
-        const s = peek();
-        if (!s) return "Carregando…";
-        if (clubById(s, clubId)?.ownerId === s.meId) return "Quem criou o clube não pode sair — apague o clube nas configurações.";
-        update((st) => ({ ...st, clubMembers: st.clubMembers.filter((m) => !(m.clubId === clubId && m.userId === st.meId)) }));
-        return null;
-      },
-      approveClubRequest(clubId, userId) {
-        const s = peek();
-        if (!s) return "Carregando…";
-        if (!canModerate(s, clubId, s.meId)) return "Só a moderação aprova pedidos.";
-        if (clubIsFull(s, clubId)) return "O clube está cheio. Aumente o limite (até 50) ou libere vagas.";
-        update((st) => ({
-          ...st,
-          clubRequests: st.clubRequests.filter((r) => !(r.clubId === clubId && r.userId === userId)),
-          clubMembers: [...st.clubMembers, { clubId, userId, role: "membro", joinedAt: nowIso() }],
-          notifs: notif(st, userId, "club_accepted", { clubId }).map((n) =>
-            n.type === "club_request" && n.clubId === clubId && n.actor === userId ? { ...n, read: true } : n,
-          ),
-        }));
-        return null;
-      },
-      rejectClubRequest(clubId, userId) {
-        update((s) => (canModerate(s, clubId, s.meId) ? { ...s, clubRequests: s.clubRequests.filter((r) => !(r.clubId === clubId && r.userId === userId)) } : s));
-      },
-      removeClubMember(clubId, userId) {
-        update((s) => {
-          const club = clubById(s, clubId);
-          if (!club || userId === club.ownerId || !canModerate(s, clubId, s.meId)) return s;
-          return { ...s, clubMembers: s.clubMembers.filter((m) => !(m.clubId === clubId && m.userId === userId)) };
-        });
-      },
-      setClubRole(clubId, userId, role) {
-        update((s) => {
-          if (clubById(s, clubId)?.ownerId !== s.meId) return s;
-          return { ...s, clubMembers: s.clubMembers.map((m) => (m.clubId === clubId && m.userId === userId && m.role !== "dono" ? { ...m, role } : m)) };
-        });
-      },
-      createClubPost(input) {
-        const s = peek();
-        if (!s) return "Carregando…";
-        const club = clubById(s, input.clubId);
-        if (!club || !memberOf(s, input.clubId, s.meId)) return "Só membros podem publicar.";
-        if (!club.areas.includes(input.area)) return "Esta área está desativada.";
-        if (!input.body.trim() && !input.image) return "Escreva alguma coisa.";
-        if (input.area === "galeria" && !input.image) return "A galeria precisa de uma imagem.";
-        const id = "cp" + uid();
-        const spoiler = club.spoilerPolicy === "marcados" ? input.spoiler : false;
-        update((st) => ({
-          ...st,
-          clubPosts: [{ ...input, spoiler, title: input.title.trim(), body: input.body.trim(), id, authorId: st.meId, createdAt: nowIso(), likes: [], replies: [] }, ...st.clubPosts],
-        }));
-        return null;
-      },
-      deleteClubPost(postId) {
-        update((s) => {
-          const p = s.clubPosts.find((x) => x.id === postId);
-          if (!p || (p.authorId !== s.meId && !canModerate(s, p.clubId, s.meId))) return s;
-          return { ...s, clubPosts: s.clubPosts.filter((x) => x.id !== postId) };
-        });
-      },
-      toggleClubPostLike(postId) {
-        update((s) => ({
-          ...s,
-          clubPosts: s.clubPosts.map((p) =>
-            p.id === postId ? { ...p, likes: p.likes.includes(s.meId) ? p.likes.filter((x) => x !== s.meId) : [...p.likes, s.meId] } : p,
-          ),
-        }));
-      },
-      toggleClubPostPin(postId) {
-        update((s) => ({ ...s, clubPosts: s.clubPosts.map((p) => (p.id === postId && canModerate(s, p.clubId, s.meId) ? { ...p, pinned: !p.pinned } : p)) }));
-      },
-      toggleClubPostResolved(postId) {
-        update((s) => ({
-          ...s,
-          clubPosts: s.clubPosts.map((p) => (p.id === postId && (p.authorId === s.meId || canModerate(s, p.clubId, s.meId)) ? { ...p, resolved: !p.resolved } : p)),
-        }));
-      },
-      replyClubPost(postId, body) {
-        const text = body.trim();
-        if (!text) return;
-        update((s) => {
-          const post = s.clubPosts.find((p) => p.id === postId);
-          if (!post || !memberOf(s, post.clubId, s.meId)) return s;
-          return {
-            ...s,
-            clubPosts: s.clubPosts.map((p) => (p.id === postId ? { ...p, replies: [...p.replies, { id: uid(), authorId: s.meId, body: text, createdAt: nowIso() }] } : p)),
-            notifs: post.authorId === s.meId ? s.notifs : notif(s, post.authorId, "club_reply", { clubId: post.clubId }),
-          };
-        });
-      },
-      createPost(p) {
-        const id = "p" + uid();
-        update((s) => ({ ...s, posts: [{ ...p, id, authorId: s.meId, createdAt: nowIso(), likes: [], comments: [] }, ...s.posts] }));
-        return id;
-      },
-      deletePost(postId) {
-        update((s) => ({ ...s, posts: s.posts.filter((p) => !(p.id === postId && p.authorId === s.meId)) }));
-      },
-      updateProfile(patch) {
-        const s = peek();
-        if (!s) return "Carregando…";
-        if (patch.username !== undefined) {
-          const u = patch.username.trim().toLowerCase();
-          if (!/^[a-z0-9._]{3,30}$/.test(u)) return "Use de 3 a 30 caracteres: letras, números, ponto ou _.";
-          if (s.users.some((x) => x.id !== s.meId && x.username === u)) return "Este nome de usuário já existe.";
-          patch = { ...patch, username: u };
-        }
-        update((st) => {
-          let next: State = { ...st, users: st.users.map((u) => (u.id === st.meId ? { ...u, ...patch } : u)) };
-          // Ao tornar a conta pública, pedidos pendentes viram seguidores (como no Instagram).
-          if (patch.isPrivate === false) {
-            const pending = st.requests.filter((r) => r.to === st.meId);
-            next = {
-              ...next,
-              requests: st.requests.filter((r) => r.to !== st.meId),
-              follows: [...st.follows, ...pending.map((r) => ({ from: r.from, to: st.meId, createdAt: nowIso() }))],
-            };
-          }
-          return next;
-        });
-        return null;
-      },
-      markAllRead() {
-        update((s) => ({ ...s, notifs: s.notifs.map((n) => (n.to === s.meId ? { ...n, read: true } : n)) }));
+      follow: (t, note) => void run("follow", [t, note]),
+      unfollow: (t) => void run("unfollow", [t]),
+      cancelRequest: (t) => void run("cancelRequest", [t]),
+      acceptRequest: (f) => void run("acceptRequest", [f]),
+      rejectRequest: (f) => void run("rejectRequest", [f]),
+      removeFollower: (u) => void run("removeFollower", [u]),
+      sendNote: (to, body) => err("sendNote", [to, body]),
+      replyNote: (n, body) => err("replyNote", [n, body]),
+      togglePostLike: (p) => void run("togglePostLike", [p]),
+      addPostComment: (p, body) => void run("addPostComment", [p, body]),
+      toggleReviewLike: (e) => void run("toggleReviewLike", [e]),
+      addReviewComment: (e, body) => void run("addReviewComment", [e, body]),
+      addBook: (book) => val("addBook", [book, id("bk")]),
+      addEntry: (input) => val("addEntry", [input, id("e")]),
+      updateEntry: (e, patch) => void run("updateEntry", [e, patch]),
+      removeEntry: (e) => void run("removeEntry", [e]),
+      reorder: (ids) => void run("reorder", [ids]),
+      addAnnotation: (e, a) => void run("addAnnotation", [e, a]),
+      removeAnnotation: (e, n) => void run("removeAnnotation", [e, n]),
+      toggleAnnotationPrivacy: (e, n) => void run("toggleAnnotationPrivacy", [e, n]),
+      updateProgress: (e, page) => void run("updateProgress", [e, page]),
+      createClub: (input) => val("createClub", [input, id("c")]),
+      updateClub: (c, patch) => err("updateClub", [c, patch]),
+      deleteClub: (c) => void run("deleteClub", [c]),
+      joinClub: (c) => err("joinClub", [c]),
+      cancelClubRequest: (c) => void run("cancelClubRequest", [c]),
+      leaveClub: (c) => err("leaveClub", [c]),
+      approveClubRequest: (c, u) => err("approveClubRequest", [c, u]),
+      rejectClubRequest: (c, u) => void run("rejectClubRequest", [c, u]),
+      removeClubMember: (c, u) => void run("removeClubMember", [c, u]),
+      setClubRole: (c, u, r) => void run("setClubRole", [c, u, r]),
+      createClubPost: (input) => err("createClubPost", [input, id("cp")]),
+      deleteClubPost: (p) => void run("deleteClubPost", [p]),
+      toggleClubPostLike: (p) => void run("toggleClubPostLike", [p]),
+      toggleClubPostPin: (p) => void run("toggleClubPostPin", [p]),
+      toggleClubPostResolved: (p) => void run("toggleClubPostResolved", [p]),
+      replyClubPost: (p, body) => void run("replyClubPost", [p, body]),
+      createPost: (p) => val("createPost", [p, id("p")]),
+      deletePost: (p) => void run("deletePost", [p]),
+      updateProfile: (patch) => err("updateProfile", [patch]),
+      markAllRead: () => {
+        const s = stateRef.current;
+        if (s?.notifs.some((n) => n.to === s.meId && !n.read)) run("markAllRead", []);
       },
       reset() {
+        if (modeRef.current !== "demo") return;
         try {
           localStorage.removeItem(KEY);
         } catch {
@@ -515,8 +267,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         setState(makeSeed());
       },
+      signOut() {
+        authPost("/api/auth/signout", { callbackUrl: "/" }).catch(() => toast("Não foi possível sair agora."));
+      },
     };
-  }, [toast, update]);
+  }, [run, toast]);
+
+  if (login) return <Login info={login} />;
 
   if (!state) {
     return (
@@ -527,7 +284,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }
 
   const me = userById(state, state.meId)!;
-  return <StoreContext.Provider value={{ state, me, actions, toasts }}>{children}</StoreContext.Provider>;
+  return <StoreContext.Provider value={{ state, me, mode, setupMissing, actions, toasts }}>{children}</StoreContext.Provider>;
 }
 
 export function useStore() {

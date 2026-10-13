@@ -10,7 +10,7 @@ import { mediaToDataUrl } from "@/lib/util";
 import { CoverPicker } from "@/components/CoverPicker";
 
 export default function SettingsPage() {
-  const { state, me, actions } = useStore();
+  const { state, me, mode, actions } = useStore();
   const router = useRouter();
   const [form, setForm] = useState({ name: me.name, username: me.username, bio: me.bio, avatar: me.avatar, cover: me.cover, isPrivate: me.isPrivate });
   const [avatarError, setAvatarError] = useState<string | null>(null);
@@ -103,6 +103,14 @@ export default function SettingsPage() {
         </div>
       </form>
 
+      {mode === "server" ? (
+        <section className="danger-zone">
+          <h2 className="section-title">Conta</h2>
+          <button className="btn btn-secondary btn-sm" onClick={() => actions.signOut()}>
+            Sair da conta
+          </button>
+        </section>
+      ) : (
       <section className="danger-zone">
         <h2 className="section-title">Protótipo</h2>
         <p className="muted small">Tudo o que você faz fica salvo só neste navegador. Para recomeçar do zero com os dados de exemplo:</p>
@@ -117,6 +125,7 @@ export default function SettingsPage() {
           Restaurar dados de exemplo
         </button>
       </section>
+      )}
     </div>
   );
 }

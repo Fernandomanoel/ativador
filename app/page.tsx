@@ -71,12 +71,24 @@ export default function FeedPage() {
         )}
 
         {items.length === 0 ? (
-          <div className="empty">
-            <p>Siga outros leitores para ver fotos e resenhas aqui.</p>
-            <Link href="/explorar" className="btn btn-primary">
-              Explorar
-            </Link>
-          </div>
+          <section className="welcome">
+            <h2>Bem-vindo(a) ao Vivlío, {me.name.split(" ")[0]}!</h2>
+            <p className="muted">Seu feed mostra fotos, resenhas e notas de leitura de quem você segue. Para começar:</p>
+            <ol className="welcome-steps">
+              <li>
+                <Link href="/configuracoes">Complete seu perfil</Link> com foto, capa e bio.
+              </li>
+              <li>
+                <Link href="/estante/adicionar">Coloque um livro na estante</Link> ou marque o que está lendo agora.
+              </li>
+              <li>
+                <Link href="/explorar">Encontre outros leitores</Link> e siga quem você conhece.
+              </li>
+              <li>
+                <Link href="/clubes">Crie um clube de leitura</Link> e chame alguém para participar.
+              </li>
+            </ol>
+          </section>
         ) : (
           items.map((it) =>
             it.kind === "post" ? (

@@ -11,7 +11,7 @@ import { IconHeart, IconHome, IconPlus, IconSearch, IconUsers } from "./Icons";
 import { Logo } from "./Logo";
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { state, me, toasts } = useStore();
+  const { state, me, mode, setupMissing, toasts } = useStore();
   const path = usePathname();
   const badge = unreadCount(state) + incomingRequests(state).length;
   const is = (p: string) => (p === "/" ? path === "/" : path.startsWith(p));
@@ -51,6 +51,11 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
+      {mode === "demo" && setupMissing.length > 0 && (
+        <div className="demo-banner" role="status">
+          <strong>Modo demonstração.</strong> O login ainda não está ligado neste servidor. Falta configurar: {setupMissing.join(", ")}. Veja docs/LOGIN.md.
+        </div>
+      )}
       <main className="page">{children}</main>
 
       <nav className="bottombar" aria-label="Navegação">

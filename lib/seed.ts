@@ -20,7 +20,8 @@ const users: User[] = [
 
 const B = (id: string, title: string, author: string, year: number, pages?: number): Book => ({ id, title, author, year, pages });
 
-const books: Book[] = [
+/** Catálogo inicial de livros (também usado pelo servidor, sem os leitores de exemplo). */
+export const books: Book[] = [
   B("b1", "A Hora da Estrela", "Clarice Lispector", 1977, 88),
   B("b2", "Torto Arado", "Itamar Vieira Junior", 2019, 264),
   B("b3", "Dom Casmurro", "Machado de Assis", 1899, 256),

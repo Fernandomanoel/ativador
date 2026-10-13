@@ -83,22 +83,22 @@ export default function ProfilePage() {
             <li>
               {seePosts ? (
                 <Link href={`/u/${user.username}/seguidores`}>
-                  <strong>{followersOf(state, user.id).length}</strong> seguidores
+                  <strong>{user.stats?.followers ?? followersOf(state, user.id).length}</strong> seguidores
                 </Link>
               ) : (
                 <span>
-                  <strong>{followersOf(state, user.id).length}</strong> seguidores
+                  <strong>{user.stats?.followers ?? followersOf(state, user.id).length}</strong> seguidores
                 </span>
               )}
             </li>
             <li>
               {seePosts ? (
                 <Link href={`/u/${user.username}/seguindo`}>
-                  <strong>{followingOf(state, user.id).length}</strong> seguindo
+                  <strong>{user.stats?.following ?? followingOf(state, user.id).length}</strong> seguindo
                 </Link>
               ) : (
                 <span>
-                  <strong>{followingOf(state, user.id).length}</strong> seguindo
+                  <strong>{user.stats?.following ?? followingOf(state, user.id).length}</strong> seguindo
                 </span>
               )}
             </li>

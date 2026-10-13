@@ -62,6 +62,9 @@ function Router() {
   );
 }
 
+// A prévia publicada roda sempre com os dados de exemplo, sem servidor.
+(window as { __VIVLIO_DEMO__?: boolean }).__VIVLIO_DEMO__ = true;
+
 // O visualizador não mostra confirm(); as ações destrutivas só mexem nos dados de exemplo deste navegador.
 window.confirm = () => true;
 
