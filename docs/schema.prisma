@@ -1,0 +1,222 @@
+// Vivlío — esquema do banco de dados
+// SQLite em desenvolvimento; troque o provider para "postgresql" em produção.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  name         String
+  passwordHash String
+  bio          String   @default("")
+  avatar       String?
+  // Conta privada: postagens só para seguidores aprovados.
+  // A estante (biblioteca) é SEMPRE pública.
+  isPrivate    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  sessions         Session[]
+  entries          LibraryEntry[]
+  posts            Post[]
+  postLikes        PostLike[]
+  postComments     PostComment[]
+  reviewLikes      ReviewLike[]
+  reviewComments   ReviewComment[]
+  following        Follow[]        @relation("follower")
+  followers        Follow[]        @relation("following")
+  sentRequests     FollowRequest[] @relation("requester")
+  receivedRequests FollowRequest[] @relation("target")
+  sentNotes        Note[]          @relation("noteFrom")
+  receivedNotes    Note[]          @relation("noteTo")
+  notifications    Notification[]  @relation("recipient")
+  actedNotifs      Notification[]  @relation("actor")
+}
+
+model Session {
+  id        String   @id // hash sha256 do token do cookie
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+  follower    User     @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followingId])
+}
+
+model FollowRequest {
+  requesterId String
+  targetId    String
+  createdAt   DateTime @default(now())
+  requester   User     @relation("requester", fields: [requesterId], references: [id], onDelete: Cascade)
+  target      User     @relation("target", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@id([requesterId, targetId])
+  @@index([targetId])
+}
+
+// Bilhete: uma única mensagem de quem pede para seguir uma conta privada,
+// e uma única resposta. Responder NÃO significa aceitar o pedido.
+model Note {
+  id        String    @id @default(cuid())
+  fromId    String
+  toId      String
+  body      String
+  reply     String?
+  repliedAt DateTime?
+  createdAt DateTime  @default(now())
+  from      User      @relation("noteFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to        User      @relation("noteTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@unique([fromId, toId])
+  @@index([toId])
+}
+
+model Book {
+  id        String         @id @default(cuid())
+  olKey     String?        @unique // chave da Open Library (ex.: /works/OL45804W)
+  title     String
+  author    String
+  coverUrl  String?
+  year      Int?
+  createdAt DateTime       @default(now())
+  entries   LibraryEntry[]
+  posts     Post[]
+}
+
+// Um livro na estante de alguém, com avaliação, resenha e anotações.
+model LibraryEntry {
+  id         String          @id @default(cuid())
+  userId     String
+  bookId     String
+  status     String          @default("lido") // lido | lendo | quero-ler | abandonado
+  format     String          @default("fisico") // fisico | ebook | audiobook
+  labels     String          @default("") // rótulos pré-estabelecidos, separados por vírgula
+  rating     Int? // 1..10 (meias estrelas: 7 = 3,5★)
+  review     String          @default("")
+  favorite   Boolean         @default(false)
+  spoiler    Boolean         @default(false)
+  position   Int             @default(0) // ordem manual na estante
+  finishedAt DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book       Book            @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  notes      Annotation[]
+  likes      ReviewLike[]
+  comments   ReviewComment[]
+  notifs     Notification[]
+
+  @@unique([userId, bookId])
+  @@index([bookId])
+}
+
+model Annotation {
+  id        String       @id @default(cuid())
+  entryId   String
+  page      Int?
+  quote     String       @default("")
+  body      String       @default("")
+  createdAt DateTime     @default(now())
+  entry     LibraryEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
+}
+
+model Post {
+  id        String         @id @default(cuid())
+  authorId  String
+  image     String
+  caption   String         @default("")
+  bookId    String?
+  createdAt DateTime       @default(now())
+  author    User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  book      Book?          @relation(fields: [bookId], references: [id], onDelete: SetNull)
+  likes     PostLike[]
+  comments  PostComment[]
+  notifs    Notification[]
+
+  @@index([authorId, createdAt])
+}
+
+model PostLike {
+  userId    String
+  postId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([userId, postId])
+  @@index([postId])
+}
+
+model PostComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+model ReviewLike {
+  userId    String
+  entryId   String
+  createdAt DateTime     @default(now())
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entry     LibraryEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@id([userId, entryId])
+  @@index([entryId])
+}
+
+model ReviewComment {
+  id        String       @id @default(cuid())
+  entryId   String
+  authorId  String
+  body      String
+  createdAt DateTime     @default(now())
+  entry     LibraryEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  author    User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
+}
+
+model Notification {
+  id        String        @id @default(cuid())
+  userId    String
+  actorId   String
+  // follow | follow_request | follow_accepted | like_post | comment_post
+  // like_review | comment_review | note | note_reply
+  type      String
+  postId    String?
+  entryId   String?
+  read      Boolean       @default(false)
+  createdAt DateTime      @default(now())
+  user      User          @relation("recipient", fields: [userId], references: [id], onDelete: Cascade)
+  actor     User          @relation("actor", fields: [actorId], references: [id], onDelete: Cascade)
+  post      Post?         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  entry     LibraryEntry? @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
