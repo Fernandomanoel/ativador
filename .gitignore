@@ -9,3 +9,4 @@ next-env.d.ts
 *.db-journal
 uploads/
 .DS_Store
+preview/dist/

@@ -2,12 +2,13 @@
   "name": "vivlio",
   "version": "0.1.0",
   "private": true,
-  "description": "Vivlío — a rede social de quem lê. Protótipo de front-end.",
+  "description": "Vivl\u00edo \u2014 a rede social de quem l\u00ea. Prot\u00f3tipo de front-end.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "preview:build": "node preview/build.mjs"
   },
   "dependencies": {
     "next": "15.5.27",
@@ -18,6 +19,7 @@
     "@types/node": "22.18.0",
     "@types/react": "19.1.12",
     "@types/react-dom": "19.1.9",
+    "esbuild": "^0.25.9",
     "typescript": "5.9.2"
   }
 }

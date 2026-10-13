@@ -34,6 +34,12 @@ Para testar os clubes: abra **Clubes → Clube da Clarice**. A Bia está na p. 1
 
 Para testar a privacidade: entre em **Atividade → Pedidos** (o `jp.paginas` mandou um bilhete) ou visite `@mari.capitulo` e clique em **Pedir para seguir**.
 
+## Visualização online
+
+Prévia navegável, que abre no celular: https://claude.ai/artifact/MhTrEQXwWDwmCgm5Liamwn (privada; compartilhe pelo menu **Share** da página).
+
+Ela é gerada a partir deste mesmo código por `npm run preview:build`, que monta `preview/dist/vivlio.html`: uma página única com roteamento em memória, para rodar no visualizador do claude.ai. Lá as confirmações ("Tem certeza?") são aceitas automaticamente, porque o visualizador não mostra essas caixas, e as capas da Open Library não carregam.
+
 ## Rodando localmente
 
 ```bash
