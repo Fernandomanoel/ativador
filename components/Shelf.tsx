@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { FORMATS, formatIcon, LABELS, STATUSES, statusLabel } from "@/lib/constants";
-import { bookById, entriesOf } from "@/lib/selectors";
+import { bookById, entriesOf, visibleNotes } from "@/lib/selectors";
 import { useStore } from "@/lib/store";
 import type { Entry, Format, Status, User } from "@/lib/types";
 import { cx } from "@/lib/util";
@@ -104,6 +104,11 @@ export function Shelf({ user }: { user: User }) {
             ))}
           </select>
           {isMe && (
+            <Link href="/estante/adicionar" className="btn btn-secondary btn-sm">
+              + Livro
+            </Link>
+          )}
+          {isMe && (
             <button
               className={cx("btn btn-sm", organize ? "btn-primary" : "btn-secondary")}
               onClick={() => {
@@ -168,7 +173,7 @@ export function Shelf({ user }: { user: User }) {
                 <Link href={`/u/${user.username}/livro/${book.id}`} className="shelf-book" draggable={false}>
                   <Cover book={book} size="md" />
                   {e.status !== "lido" && <span className={cx("ribbon", e.status)}>{statusLabel(e.status)}</span>}
-                  {(e.review || e.notes.length > 0) && <span className="has-review" title="Tem resenha ou anotações" />}
+                  {(e.review || visibleNotes(e, me.id).length > 0) && <span className="has-review" title="Tem resenha ou anotações" />}
                 </Link>
                 <div className="shelf-meta">
                   <Stars value={e.rating} size={10} />

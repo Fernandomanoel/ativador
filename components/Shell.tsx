@@ -7,7 +7,7 @@ import { incomingRequests, unreadCount } from "@/lib/selectors";
 import { useStore } from "@/lib/store";
 import { cx } from "@/lib/util";
 import { Avatar } from "./Avatar";
-import { IconHeart, IconHome, IconPlus, IconSearch, IconShelf } from "./Icons";
+import { IconHeart, IconHome, IconPlus, IconSearch, IconUsers } from "./Icons";
 import { Logo } from "./Logo";
 
 export function Shell({ children }: { children: ReactNode }) {
@@ -28,6 +28,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <Link href="/" className={cx(is("/") && "active")}>Feed</Link>
             <Link href="/explorar" className={cx(is("/explorar") && "active")}>Explorar</Link>
             <Link href={myShelf} className={cx(path === myShelf && "active")}>Minha estante</Link>
+            <Link href="/clubes" className={cx(is("/clubes") && "active")}>Clubes</Link>
             <Link href="/notificacoes" className={cx(is("/notificacoes") && "active")}>
               Atividade{badge > 0 && <span className="badge">{badge}</span>}
             </Link>
@@ -62,8 +63,8 @@ export function Shell({ children }: { children: ReactNode }) {
         <Link href="/novo" className={cx(is("/novo") && "active")} aria-label="Publicar foto">
           <IconPlus />
         </Link>
-        <Link href="/estante/adicionar" className={cx(is("/estante") && "active")} aria-label="Adicionar livro">
-          <IconShelf />
+        <Link href="/clubes" className={cx(is("/clubes") && "active")} aria-label="Clubes de leitura">
+          <IconUsers />
         </Link>
         <Link href={myShelf} className={cx(path.startsWith(myShelf) && "active")} aria-label="Perfil">
           <Avatar user={me} size={26} />

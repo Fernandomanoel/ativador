@@ -32,6 +32,8 @@ export interface Annotation {
   page?: number;
   quote: string;
   body: string;
+  /** Nota privada: só a dona ou o dono da estante vê. */
+  isPrivate?: boolean;
   createdAt: string;
 }
 
@@ -43,6 +45,7 @@ export interface Entry {
   format: Format;
   labels: string[];
   rating?: number; // 1..10 — meias estrelas (7 = 3,5★)
+  progress?: number; // página atual (leituras em andamento)
   review: string;
   favorite: boolean;
   spoiler: boolean;
@@ -108,7 +111,10 @@ export type NotifType =
   | "like_review"
   | "comment_review"
   | "note"
-  | "note_reply";
+  | "note_reply"
+  | "club_request"
+  | "club_accepted"
+  | "club_reply";
 
 export interface Notif {
   id: string;
@@ -117,8 +123,66 @@ export interface Notif {
   type: NotifType;
   postId?: string;
   entryId?: string;
+  clubId?: string;
   createdAt: string;
   read: boolean;
+}
+
+/* ---------- Clubes de leitura ---------- */
+
+export type ClubArea = "anotacoes" | "resenhas" | "duvidas" | "estudos" | "galeria" | "cronograma" | "conversa";
+export type ClubFocus = "geral" | "estudos" | "quadrinhos" | "booktok" | "classicos" | "nacionais";
+export type SpoilerPolicy = "sem-spoiler" | "marcados" | "liberado";
+export type ClubAccess = "aberto" | "aprovacao";
+export type ClubRole = "dono" | "moderador" | "membro";
+
+export interface Club {
+  id: string;
+  name: string;
+  description: string;
+  rules: string;
+  focus: ClubFocus;
+  access: ClubAccess;
+  spoilerPolicy: SpoilerPolicy;
+  maxMembers: number; // até 50
+  areas: ClubArea[];
+  bookId?: string; // leitura do mês
+  tone: number;
+  ownerId: string;
+  createdAt: string;
+}
+
+export interface ClubMember {
+  clubId: string;
+  userId: string;
+  role: ClubRole;
+  joinedAt: string;
+}
+
+export interface ClubRequest {
+  clubId: string;
+  userId: string;
+  createdAt: string;
+}
+
+export interface ClubPost {
+  id: string;
+  clubId: string;
+  area: ClubArea;
+  authorId: string;
+  title: string;
+  body: string;
+  image?: string;
+  scene?: Scene; // ilustração dos dados de exemplo
+  bookId?: string;
+  page?: number; // até qual página o post fala (proteção contra spoiler)
+  rating?: number; // resenhas
+  spoiler: boolean;
+  resolved?: boolean; // plantão de dúvidas
+  pinned?: boolean;
+  createdAt: string;
+  likes: string[];
+  replies: Comment[];
 }
 
 export interface State {
@@ -132,4 +196,8 @@ export interface State {
   requests: FollowRequest[];
   notes: Note[];
   notifs: Notif[];
+  clubs: Club[];
+  clubMembers: ClubMember[];
+  clubRequests: ClubRequest[];
+  clubPosts: ClubPost[];
 }

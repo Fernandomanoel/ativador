@@ -6,16 +6,17 @@ import { useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { Cover } from "@/components/Cover";
 import { FollowControls } from "@/components/FollowControls";
-import { IconComment, IconGrid, IconHeart, IconLock, IconPen, IconShelf } from "@/components/Icons";
+import { IconBook, IconComment, IconGrid, IconHeart, IconLock, IconPen, IconShelf } from "@/components/Icons";
 import { PostImage } from "@/components/PostImage";
+import { ReadingCard } from "@/components/ReadingCard";
 import { ReviewCard } from "@/components/ReviewCard";
 import { Shelf } from "@/components/Shelf";
 import { Stars } from "@/components/Stars";
-import { bookById, canSeePosts, entriesOf, followersOf, followingOf, isFollowing, userByUsername } from "@/lib/selectors";
+import { bookById, canSeePosts, entriesOf, followersOf, followingOf, isFollowing, readingNow, userByUsername } from "@/lib/selectors";
 import { useStore } from "@/lib/store";
 import { cx } from "@/lib/util";
 
-type Tab = "estante" | "fotos" | "resenhas";
+type Tab = "estante" | "lendo" | "fotos" | "resenhas";
 
 export default function ProfilePage() {
   const { username } = useParams<{ username: string }>();
@@ -44,6 +45,7 @@ export default function ProfilePage() {
   const year = new Date().getFullYear();
   const readThisYear = entries.filter((e) => e.status === "lido" && e.finishedAt && new Date(e.finishedAt).getFullYear() === year).length;
   const followsMe = isFollowing(state, user.id, me.id) && !isMe;
+  const reading = readingNow(state, user.id);
 
   return (
     <div className="profile">
@@ -120,6 +122,9 @@ export default function ProfilePage() {
         <button role="tab" aria-selected={tab === "estante"} className={cx(tab === "estante" && "on")} onClick={() => setTab("estante")}>
           <IconShelf size={14} /> Estante
         </button>
+        <button role="tab" aria-selected={tab === "lendo"} className={cx(tab === "lendo" && "on")} onClick={() => setTab("lendo")}>
+          <IconBook size={14} /> Lendo{reading.length > 0 && <span className="tab-count">{reading.length}</span>}
+        </button>
         <button role="tab" aria-selected={tab === "fotos"} className={cx(tab === "fotos" && "on")} onClick={() => setTab("fotos")}>
           {seePosts ? <IconGrid size={14} /> : <IconLock size={14} />} Fotos
         </button>
@@ -129,6 +134,28 @@ export default function ProfilePage() {
       </nav>
 
       {tab === "estante" && <Shelf user={user} />}
+
+      {tab === "lendo" && (
+        <section className="reading-tab">
+          <p className="hint">
+            {isMe
+              ? "Suas leituras em andamento. Cada nota pode ser pública (aparece no seu perfil e no feed de quem segue você) ou só sua."
+              : `O que ${user.name.split(" ")[0]} está lendo agora, com as notas que decidiu compartilhar.`}
+          </p>
+          {reading.length === 0 ? (
+            <div className="empty">
+              <p>Nenhuma leitura em andamento.</p>
+              {isMe && (
+                <Link href="/estante/adicionar" className="btn btn-primary">
+                  Começar uma leitura
+                </Link>
+              )}
+            </div>
+          ) : (
+            reading.map((e) => <ReadingCard key={e.id} entry={e} />)
+          )}
+        </section>
+      )}
 
       {tab === "resenhas" &&
         (reviews.length ? (

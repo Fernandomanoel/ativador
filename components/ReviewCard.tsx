@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { statusLabel } from "@/lib/constants";
-import { bookById, userById } from "@/lib/selectors";
+import { bookById, userById, visibleNotes } from "@/lib/selectors";
 import { useStore } from "@/lib/store";
 import type { Entry } from "@/lib/types";
 import { cx, timeAgo } from "@/lib/util";
@@ -67,9 +67,9 @@ export function ReviewCard({ entry, showUser = true, clamp = true }: { entry: En
           <Link href={href} className="chip-btn">
             <IconComment size={14} /> {entry.comments.length || ""}
           </Link>
-          {entry.notes.length > 0 && (
+          {visibleNotes(entry, me.id).length > 0 && (
             <Link href={href} className="muted small">
-              {entry.notes.length} {entry.notes.length === 1 ? "anotação" : "anotações"}
+              {visibleNotes(entry, me.id).length} {visibleNotes(entry, me.id).length === 1 ? "anotação" : "anotações"}
             </Link>
           )}
         </div>

@@ -110,6 +110,7 @@ model LibraryEntry {
   format     String          @default("fisico") // fisico | ebook | audiobook
   labels     String          @default("") // rótulos pré-estabelecidos, separados por vírgula
   rating     Int? // 1..10 (meias estrelas: 7 = 3,5★)
+  progress   Int? // página atual (leituras em andamento)
   review     String          @default("")
   favorite   Boolean         @default(false)
   spoiler    Boolean         @default(false)
@@ -134,6 +135,7 @@ model Annotation {
   page      Int?
   quote     String       @default("")
   body      String       @default("")
+  isPrivate Boolean      @default(false) // nota "só minha"
   createdAt DateTime     @default(now())
   entry     LibraryEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
 
@@ -219,4 +221,57 @@ model Notification {
   entry     LibraryEntry? @relation(fields: [entryId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+// ---------- Clubes de leitura (até 50 membros) ----------
+
+model Club {
+  id            String   @id @default(cuid())
+  name          String
+  description   String   @default("")
+  rules         String   @default("")
+  focus         String   // geral | estudos | quadrinhos | booktok | classicos | nacionais
+  access        String   @default("aprovacao") // aberto | aprovacao
+  spoilerPolicy String   @default("marcados") // sem-spoiler | marcados | liberado
+  maxMembers    Int      @default(30) // validar 2..50 no servidor
+  areas         String   // áreas ativas, separadas por vírgula
+  bookId        String? // leitura do mês
+  ownerId       String
+  createdAt     DateTime @default(now())
+}
+
+model ClubMember {
+  clubId   String
+  userId   String
+  role     String   @default("membro") // dono | moderador | membro
+  joinedAt DateTime @default(now())
+
+  @@id([clubId, userId])
+}
+
+model ClubRequest {
+  clubId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@id([clubId, userId])
+}
+
+model ClubPost {
+  id        String   @id @default(cuid())
+  clubId    String
+  area      String
+  authorId  String
+  title     String   @default("")
+  body      String   @default("")
+  image     String?
+  bookId    String?
+  page      Int? // proteção contra spoiler por página
+  rating    Int?
+  spoiler   Boolean  @default(false)
+  resolved  Boolean  @default(false)
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([clubId, area, createdAt])
 }

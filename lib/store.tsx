@@ -2,15 +2,17 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CoinMark } from "@/components/Logo";
-import { NOTE_MAX } from "./constants";
+import { CLUB_MAX, NOTE_MAX } from "./constants";
 import { makeSeed, STATE_VERSION } from "./seed";
-import { hasRequested, isFollowing, noteBetween, userById } from "./selectors";
-import type { Annotation, Book, Entry, Notif, NotifType, Post, State, User } from "./types";
+import { canModerate, clubById, clubIsFull, hasClubRequest, hasRequested, isFollowing, memberOf, noteBetween, userById } from "./selectors";
+import type { Annotation, Book, Club, ClubPost, ClubRole, Entry, Notif, NotifType, Post, State, User } from "./types";
 import { nowIso, uid } from "./util";
 
 const KEY = "vivlio:state";
 
 type EntryInput = Omit<Entry, "id" | "userId" | "position" | "createdAt" | "updatedAt" | "notes" | "likes" | "comments">;
+export type ClubInput = Omit<Club, "id" | "ownerId" | "createdAt">;
+export type ClubPostInput = Pick<ClubPost, "clubId" | "area" | "title" | "body" | "image" | "bookId" | "page" | "rating" | "spoiler">;
 
 export interface Actions {
   follow(targetId: string, noteBody?: string): void;
@@ -32,6 +34,24 @@ export interface Actions {
   reorder(orderedIds: string[]): void;
   addAnnotation(entryId: string, a: Omit<Annotation, "id" | "createdAt">): void;
   removeAnnotation(entryId: string, annotationId: string): void;
+  toggleAnnotationPrivacy(entryId: string, annotationId: string): void;
+  updateProgress(entryId: string, page: number): void;
+  createClub(input: ClubInput): string;
+  updateClub(clubId: string, patch: Partial<ClubInput>): string | null;
+  deleteClub(clubId: string): void;
+  joinClub(clubId: string): string | null;
+  cancelClubRequest(clubId: string): void;
+  leaveClub(clubId: string): string | null;
+  approveClubRequest(clubId: string, userId: string): string | null;
+  rejectClubRequest(clubId: string, userId: string): void;
+  removeClubMember(clubId: string, userId: string): void;
+  setClubRole(clubId: string, userId: string, role: Exclude<ClubRole, "dono">): void;
+  createClubPost(input: ClubPostInput): string | null;
+  deleteClubPost(postId: string): void;
+  toggleClubPostLike(postId: string): void;
+  toggleClubPostPin(postId: string): void;
+  toggleClubPostResolved(postId: string): void;
+  replyClubPost(postId: string, body: string): void;
   createPost(p: Pick<Post, "image" | "caption" | "bookId">): string;
   deletePost(postId: string): void;
   updateProfile(patch: Partial<Pick<User, "name" | "username" | "bio" | "avatar" | "isPrivate">>): string | null;
@@ -285,6 +305,172 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...s,
           entries: s.entries.map((e) => (e.id === entryId && e.userId === s.meId ? { ...e, notes: e.notes.filter((n) => n.id !== annotationId) } : e)),
         }));
+      },
+      toggleAnnotationPrivacy(entryId, annotationId) {
+        update((s) => ({
+          ...s,
+          entries: s.entries.map((e) =>
+            e.id === entryId && e.userId === s.meId ? { ...e, notes: e.notes.map((n) => (n.id === annotationId ? { ...n, isPrivate: !n.isPrivate } : n)) } : e,
+          ),
+        }));
+      },
+      updateProgress(entryId, page) {
+        update((s) => ({
+          ...s,
+          entries: s.entries.map((e) => {
+            if (e.id !== entryId || e.userId !== s.meId) return e;
+            const pages = s.books.find((b) => b.id === e.bookId)?.pages;
+            const p = Math.max(0, Math.round(pages ? Math.min(page, pages) : page));
+            return { ...e, progress: p, updatedAt: nowIso() };
+          }),
+        }));
+      },
+      createClub(input) {
+        const id = "c" + uid();
+        update((s) => ({
+          ...s,
+          clubs: [...s.clubs, { ...input, maxMembers: Math.min(CLUB_MAX, Math.max(2, input.maxMembers)), id, ownerId: s.meId, createdAt: nowIso() }],
+          clubMembers: [...s.clubMembers, { clubId: id, userId: s.meId, role: "dono", joinedAt: nowIso() }],
+        }));
+        return id;
+      },
+      updateClub(clubId, patch) {
+        const s = peek();
+        if (!s) return "Carregando…";
+        if (!canModerate(s, clubId, s.meId)) return "Só a moderação pode alterar o clube.";
+        const count = s.clubMembers.filter((m) => m.clubId === clubId).length;
+        if (patch.maxMembers !== undefined) {
+          if (patch.maxMembers > CLUB_MAX) return `O limite máximo é ${CLUB_MAX} membros.`;
+          if (patch.maxMembers < count) return `O clube já tem ${count} membros; o limite não pode ser menor.`;
+        }
+        if (patch.areas && patch.areas.length === 0) return "Deixe pelo menos uma área ativa.";
+        update((st) => ({ ...st, clubs: st.clubs.map((c) => (c.id === clubId ? { ...c, ...patch } : c)) }));
+        return null;
+      },
+      deleteClub(clubId) {
+        update((s) => {
+          if (clubById(s, clubId)?.ownerId !== s.meId) return s;
+          return {
+            ...s,
+            clubs: s.clubs.filter((c) => c.id !== clubId),
+            clubMembers: s.clubMembers.filter((m) => m.clubId !== clubId),
+            clubRequests: s.clubRequests.filter((r) => r.clubId !== clubId),
+            clubPosts: s.clubPosts.filter((p) => p.clubId !== clubId),
+          };
+        });
+      },
+      joinClub(clubId) {
+        const s = peek();
+        if (!s) return "Carregando…";
+        const club = clubById(s, clubId);
+        if (!club) return "Clube não encontrado.";
+        if (memberOf(s, clubId, s.meId)) return "Você já participa deste clube.";
+        if (clubIsFull(s, clubId)) return `Clube cheio (${club.maxMembers}/${club.maxMembers}).`;
+        if (club.access === "aberto") {
+          update((st) => ({ ...st, clubMembers: [...st.clubMembers, { clubId, userId: st.meId, role: "membro", joinedAt: nowIso() }] }));
+          return null;
+        }
+        if (hasClubRequest(s, clubId, s.meId)) return "Pedido já enviado.";
+        update((st) => ({
+          ...st,
+          clubRequests: [...st.clubRequests, { clubId, userId: st.meId, createdAt: nowIso() }],
+          notifs: notif(st, club.ownerId, "club_request", { clubId }),
+        }));
+        return null;
+      },
+      cancelClubRequest(clubId) {
+        update((s) => ({ ...s, clubRequests: s.clubRequests.filter((r) => !(r.clubId === clubId && r.userId === s.meId)) }));
+      },
+      leaveClub(clubId) {
+        const s = peek();
+        if (!s) return "Carregando…";
+        if (clubById(s, clubId)?.ownerId === s.meId) return "Quem criou o clube não pode sair — apague o clube nas configurações.";
+        update((st) => ({ ...st, clubMembers: st.clubMembers.filter((m) => !(m.clubId === clubId && m.userId === st.meId)) }));
+        return null;
+      },
+      approveClubRequest(clubId, userId) {
+        const s = peek();
+        if (!s) return "Carregando…";
+        if (!canModerate(s, clubId, s.meId)) return "Só a moderação aprova pedidos.";
+        if (clubIsFull(s, clubId)) return "O clube está cheio. Aumente o limite (até 50) ou libere vagas.";
+        update((st) => ({
+          ...st,
+          clubRequests: st.clubRequests.filter((r) => !(r.clubId === clubId && r.userId === userId)),
+          clubMembers: [...st.clubMembers, { clubId, userId, role: "membro", joinedAt: nowIso() }],
+          notifs: notif(st, userId, "club_accepted", { clubId }).map((n) =>
+            n.type === "club_request" && n.clubId === clubId && n.actor === userId ? { ...n, read: true } : n,
+          ),
+        }));
+        return null;
+      },
+      rejectClubRequest(clubId, userId) {
+        update((s) => (canModerate(s, clubId, s.meId) ? { ...s, clubRequests: s.clubRequests.filter((r) => !(r.clubId === clubId && r.userId === userId)) } : s));
+      },
+      removeClubMember(clubId, userId) {
+        update((s) => {
+          const club = clubById(s, clubId);
+          if (!club || userId === club.ownerId || !canModerate(s, clubId, s.meId)) return s;
+          return { ...s, clubMembers: s.clubMembers.filter((m) => !(m.clubId === clubId && m.userId === userId)) };
+        });
+      },
+      setClubRole(clubId, userId, role) {
+        update((s) => {
+          if (clubById(s, clubId)?.ownerId !== s.meId) return s;
+          return { ...s, clubMembers: s.clubMembers.map((m) => (m.clubId === clubId && m.userId === userId && m.role !== "dono" ? { ...m, role } : m)) };
+        });
+      },
+      createClubPost(input) {
+        const s = peek();
+        if (!s) return "Carregando…";
+        const club = clubById(s, input.clubId);
+        if (!club || !memberOf(s, input.clubId, s.meId)) return "Só membros podem publicar.";
+        if (!club.areas.includes(input.area)) return "Esta área está desativada.";
+        if (!input.body.trim() && !input.image) return "Escreva alguma coisa.";
+        if (input.area === "galeria" && !input.image) return "A galeria precisa de uma imagem.";
+        const id = "cp" + uid();
+        const spoiler = club.spoilerPolicy === "marcados" ? input.spoiler : false;
+        update((st) => ({
+          ...st,
+          clubPosts: [{ ...input, spoiler, title: input.title.trim(), body: input.body.trim(), id, authorId: st.meId, createdAt: nowIso(), likes: [], replies: [] }, ...st.clubPosts],
+        }));
+        return null;
+      },
+      deleteClubPost(postId) {
+        update((s) => {
+          const p = s.clubPosts.find((x) => x.id === postId);
+          if (!p || (p.authorId !== s.meId && !canModerate(s, p.clubId, s.meId))) return s;
+          return { ...s, clubPosts: s.clubPosts.filter((x) => x.id !== postId) };
+        });
+      },
+      toggleClubPostLike(postId) {
+        update((s) => ({
+          ...s,
+          clubPosts: s.clubPosts.map((p) =>
+            p.id === postId ? { ...p, likes: p.likes.includes(s.meId) ? p.likes.filter((x) => x !== s.meId) : [...p.likes, s.meId] } : p,
+          ),
+        }));
+      },
+      toggleClubPostPin(postId) {
+        update((s) => ({ ...s, clubPosts: s.clubPosts.map((p) => (p.id === postId && canModerate(s, p.clubId, s.meId) ? { ...p, pinned: !p.pinned } : p)) }));
+      },
+      toggleClubPostResolved(postId) {
+        update((s) => ({
+          ...s,
+          clubPosts: s.clubPosts.map((p) => (p.id === postId && (p.authorId === s.meId || canModerate(s, p.clubId, s.meId)) ? { ...p, resolved: !p.resolved } : p)),
+        }));
+      },
+      replyClubPost(postId, body) {
+        const text = body.trim();
+        if (!text) return;
+        update((s) => {
+          const post = s.clubPosts.find((p) => p.id === postId);
+          if (!post || !memberOf(s, post.clubId, s.meId)) return s;
+          return {
+            ...s,
+            clubPosts: s.clubPosts.map((p) => (p.id === postId ? { ...p, replies: [...p.replies, { id: uid(), authorId: s.meId, body: text, createdAt: nowIso() }] } : p)),
+            notifs: post.authorId === s.meId ? s.notifs : notif(s, post.authorId, "club_reply", { clubId: post.clubId }),
+          };
+        });
       },
       createPost(p) {
         const id = "p" + uid();

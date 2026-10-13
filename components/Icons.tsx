@@ -76,3 +76,9 @@ export const IconImage = ({ size, ...p }: P) => (
 export const IconQuote = ({ size, ...p }: P) => (
   <svg {...base(size)} {...p}><path d="M7 7h4v4c0 3-1.5 5-4 6M14 7h4v4c0 3-1.5 5-4 6" /></svg>
 );
+export const IconBook = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}><path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5C17 4.5 14 5 12 6.5z" /><path d="M12 6.5v13" /></svg>
+);
+export const IconUsers = ({ size, ...p }: P) => (
+  <svg {...base(size)} {...p}><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.5-3.5 3.2-5.5 6.5-5.5s6 2 6.5 5.5" /><path d="M16 4.8a3.3 3.3 0 0 1 0 6.4M18 14.8c2 .7 3.3 2.5 3.5 5.2" /></svg>
+);

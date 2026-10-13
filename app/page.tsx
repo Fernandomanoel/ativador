@@ -4,13 +4,17 @@ import Link from "next/link";
 import { Cover } from "@/components/Cover";
 import { FollowControls } from "@/components/FollowControls";
 import { PostCard } from "@/components/PostCard";
+import { ReadingNoteCard } from "@/components/ReadingCard";
 import { ReviewCard } from "@/components/ReviewCard";
 import { UserLink } from "@/components/UserLink";
 import { bookById, followersOf, followingOf, isFollowing, userById, visiblePosts } from "@/lib/selectors";
 import { useStore } from "@/lib/store";
-import type { Entry, Post } from "@/lib/types";
+import type { Annotation, Entry, Post } from "@/lib/types";
 
-type Item = { kind: "post"; at: string; post: Post } | { kind: "review"; at: string; entry: Entry };
+type Item =
+  | { kind: "post"; at: string; post: Post }
+  | { kind: "review"; at: string; entry: Entry }
+  | { kind: "note"; at: string; entry: Entry; note: Annotation };
 
 export default function FeedPage() {
   const { state, me } = useStore();
@@ -30,6 +34,13 @@ export default function FeedPage() {
     ...state.entries
       .filter((e) => circle.has(e.userId) && e.review && e.userId !== me.id)
       .map((entry) => ({ kind: "review" as const, at: entry.updatedAt, entry })),
+    // Diário de leitura: só a nota pública mais recente de cada leitura em andamento.
+    ...state.entries
+      .filter((e) => circle.has(e.userId) && e.userId !== me.id && e.status === "lendo")
+      .flatMap((entry) => {
+        const pub = entry.notes.filter((n) => !n.isPrivate).sort((a, b) => (b.page ?? 0) - (a.page ?? 0))[0];
+        return pub ? [{ kind: "note" as const, at: entry.updatedAt, entry, note: pub }] : [];
+      }),
   ].sort((a, b) => b.at.localeCompare(a.at));
 
   const suggestions = state.users
@@ -70,6 +81,8 @@ export default function FeedPage() {
           items.map((it) =>
             it.kind === "post" ? (
               <PostCard key={it.post.id} post={it.post} />
+            ) : it.kind === "note" ? (
+              <ReadingNoteCard key={it.note.id} entry={it.entry} note={it.note} />
             ) : (
               <div key={it.entry.id} className="feed-review">
                 <ReviewCard entry={it.entry} />

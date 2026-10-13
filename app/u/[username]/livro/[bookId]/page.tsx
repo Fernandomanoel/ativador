@@ -6,12 +6,14 @@ import { useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { Cover } from "@/components/Cover";
 import { draftOf, EntryEditor } from "@/components/EntryEditor";
-import { IconHeart, IconQuote, IconTrash } from "@/components/Icons";
+import { AnnotationForm, AnnotationList } from "@/components/Annotations";
+import { IconHeart } from "@/components/Icons";
+import { ProgressBar } from "@/components/ReadingCard";
 import { Modal } from "@/components/Modal";
 import { CommentForm, CommentLine } from "@/components/PostCard";
 import { Stars } from "@/components/Stars";
 import { formatIcon, formatLabel, statusLabel } from "@/lib/constants";
-import { bookById, entryFor, userByUsername } from "@/lib/selectors";
+import { bookById, entryFor, userByUsername, visibleNotes } from "@/lib/selectors";
 import { useStore } from "@/lib/store";
 import { longDate, timeAgo } from "@/lib/util";
 
@@ -21,7 +23,6 @@ export default function EntryPage() {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [reveal, setReveal] = useState(false);
-  const [note, setNote] = useState({ page: "", quote: "", body: "" });
 
   const user = userByUsername(state, username);
   const book = bookById(state, bookId);
@@ -41,6 +42,7 @@ export default function EntryPage() {
   const isMe = user.id === me.id;
   const liked = entry.likes.includes(me.id);
   const mine = entryFor(state, me.id, book.id);
+  const notes = visibleNotes(entry, me.id);
 
   return (
     <div className="entry-page">
@@ -141,51 +143,19 @@ export default function EntryPage() {
           <span className="muted small">{entry.likes.length} curtidas</span>
         </div>
 
-        <h2 className="section-title">
-          Anotações <span className="count">{entry.notes.length}</span>
-        </h2>
-        {entry.notes.length === 0 && <p className="muted">{isMe ? "Guarde aqui trechos, páginas e pensamentos." : "Nenhuma anotação."}</p>}
-        <ol className="annotations">
-          {entry.notes.map((n) => (
-            <li key={n.id} className="annotation">
-              <span className="annotation-page">{n.page ? `p. ${n.page}` : "—"}</span>
-              <div>
-                {n.quote && (
-                  <blockquote>
-                    <IconQuote size={14} /> {n.quote}
-                  </blockquote>
-                )}
-                {n.body && <p>{n.body}</p>}
-              </div>
-              {isMe && (
-                <button className="icon-btn" aria-label="Apagar anotação" onClick={() => actions.removeAnnotation(entry.id, n.id)}>
-                  <IconTrash size={16} />
-                </button>
-              )}
-            </li>
-          ))}
-        </ol>
-
-        {isMe && (
-          <form
-            className="annotation-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!note.quote.trim() && !note.body.trim()) return;
-              actions.addAnnotation(entry.id, { page: note.page ? Number(note.page) : undefined, quote: note.quote.trim(), body: note.body.trim() });
-              setNote({ page: "", quote: "", body: "" });
-            }}
-          >
-            <div className="annotation-form-row">
-              <input type="number" min={1} placeholder="Pág." value={note.page} onChange={(e) => setNote({ ...note, page: e.target.value })} aria-label="Página" />
-              <input placeholder="Trecho do livro (opcional)" value={note.quote} onChange={(e) => setNote({ ...note, quote: e.target.value })} aria-label="Trecho" />
-            </div>
-            <textarea rows={2} placeholder="Sua anotação…" value={note.body} onChange={(e) => setNote({ ...note, body: e.target.value })} aria-label="Anotação" />
-            <button className="btn btn-secondary btn-sm" type="submit">
-              Adicionar anotação
-            </button>
-          </form>
+        {entry.status === "lendo" && (
+          <div className="entry-progress">
+            <ProgressBar entry={entry} />
+          </div>
         )}
+
+        <h2 className="section-title">
+          Anotações <span className="count">{notes.length}</span>
+          {isMe && entry.notes.length > notes.filter((n) => !n.isPrivate).length && <span className="muted small">· 🔒 algumas só para você</span>}
+        </h2>
+        {notes.length === 0 && <p className="muted">{isMe ? "Guarde aqui trechos, páginas e pensamentos — públicos ou só para você." : "Nenhuma anotação pública."}</p>}
+        <AnnotationList entry={entry} />
+        {isMe && <AnnotationForm entry={entry} />}
 
         <h2 className="section-title">
           Comentários <span className="count">{entry.comments.length}</span>

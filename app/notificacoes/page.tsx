@@ -24,6 +24,9 @@ const TEXT: Record<Notif["type"], string> = {
   comment_review: "comentou na sua resenha.",
   note: "enviou um bilhete para você.",
   note_reply: "respondeu seu bilhete.",
+  club_request: "pediu para entrar no seu clube.",
+  club_accepted: "aprovou sua entrada no clube.",
+  club_reply: "respondeu sua publicação no clube.",
 };
 
 function ReplyBox({ note, onDone }: { note: Note; onDone: () => void }) {
@@ -107,6 +110,7 @@ export default function NotificationsPage() {
             const entry = n.entryId ? state.entries.find((e) => e.id === n.entryId) : undefined;
             const book = entry ? bookById(state, entry.bookId) : undefined;
             const href =
+              n.clubId ? (n.type === "club_request" ? `/clubes/${n.clubId}/config` : `/clubes/${n.clubId}`) :
               post ? `/p/${post.id}` : entry && book ? `/u/${me.username}/livro/${book.id}` : n.type === "note" || n.type === "note_reply" ? "#bilhetes" : `/u/${actor.username}`;
             return (
               <li key={n.id} className={cx("notif", !n.read && "unread")}>

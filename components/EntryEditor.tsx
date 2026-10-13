@@ -6,7 +6,7 @@ import type { Entry, Format, Status } from "@/lib/types";
 import { cx } from "@/lib/util";
 import { StarInput } from "./Stars";
 
-export type EntryDraft = Pick<Entry, "status" | "format" | "labels" | "rating" | "review" | "favorite" | "spoiler" | "finishedAt">;
+export type EntryDraft = Pick<Entry, "status" | "format" | "labels" | "rating" | "review" | "favorite" | "spoiler" | "finishedAt" | "progress">;
 
 export const emptyDraft = (): EntryDraft => ({
   status: "lido",
@@ -17,6 +17,7 @@ export const emptyDraft = (): EntryDraft => ({
   favorite: false,
   spoiler: false,
   finishedAt: new Date().toISOString(),
+  progress: undefined,
 });
 
 export const draftOf = (e: Entry): EntryDraft => ({
@@ -28,6 +29,7 @@ export const draftOf = (e: Entry): EntryDraft => ({
   favorite: e.favorite,
   spoiler: e.spoiler,
   finishedAt: e.finishedAt,
+  progress: e.progress,
 });
 
 /** Formulário de livro na estante: status, formato, rótulos, nota, resenha. */
@@ -78,6 +80,12 @@ export function EntryEditor({ initial, submitLabel, onSubmit, onCancel }: { init
             <span className="toggle-ui" /> Entre os favoritos
           </label>
         </fieldset>
+        {d.status === "lendo" && (
+          <fieldset>
+            <legend>Estou na página</legend>
+            <input type="number" min={0} value={d.progress ?? ""} onChange={(e) => set("progress", e.target.value ? Number(e.target.value) : undefined)} style={{ width: 110 }} />
+          </fieldset>
+        )}
         {d.status === "lido" && (
           <fieldset>
             <legend>Terminei em</legend>
