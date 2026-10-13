@@ -68,3 +68,26 @@ export function fileToDataUrl(file: File, max = 1080, quality = 0.82): Promise<s
 }
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
+
+/** Limite para GIFs, que são guardados sem compressão para continuarem animados. */
+export const GIF_MAX_BYTES = 1.5 * 1024 * 1024;
+
+/**
+ * Foto ou GIF para capas e avatares. Fotos são reduzidas; GIFs ficam como estão
+ * (redimensionar no canvas tiraria a animação), por isso têm limite de tamanho.
+ */
+export function mediaToDataUrl(file: File, max = 1600): Promise<string> {
+  if (!file.type.startsWith("image/")) return Promise.reject(new Error("Escolha uma foto ou um GIF."));
+  if (file.type !== "image/gif") return fileToDataUrl(file, max, 0.85);
+  if (file.size > GIF_MAX_BYTES) {
+    return Promise.reject(new Error(`GIF grande demais (${(file.size / 1024 / 1024).toFixed(1)} MB). O limite é 1,5 MB.`));
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Não consegui ler este GIF."));
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(file);
+  });
+}
+
+export const isGif = (src?: string) => !!src && src.startsWith("data:image/gif");

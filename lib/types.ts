@@ -6,7 +6,8 @@ export interface User {
   username: string;
   name: string;
   bio: string;
-  avatar?: string; // data URL ou URL
+  avatar?: string; // data URL ou URL (foto ou GIF)
+  cover?: string; // capa do perfil: foto ou GIF
   isPrivate: boolean;
   joinedAt: string;
 }
@@ -147,6 +148,7 @@ export interface Club {
   maxMembers: number; // até 50
   areas: ClubArea[];
   bookId?: string; // leitura do mês
+  cover?: string; // capa do clube: foto ou GIF
   tone: number;
   ownerId: string;
   createdAt: string;

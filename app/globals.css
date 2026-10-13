@@ -749,3 +749,33 @@ input[type="range"] { width: 100%; accent-color: var(--accent-btn); }
   .reading-cover .cover { width: 76px; }
   .radio-cards, .radio-cards.two { grid-template-columns: 1fr; }
 }
+
+/* ==========================================================================
+   Capas personalizadas (foto ou GIF) — perfil e clube
+   ========================================================================== */
+.cover-picker { display: grid; gap: 8px; }
+.cover-preview { position: relative; width: 100%; aspect-ratio: 3 / 1; max-width: 100%; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line-2); padding: 0; background: var(--bg-2); color: var(--body); }
+.cover-preview img { width: 100%; height: 100%; object-fit: cover; }
+.cover-preview.empty { border-style: dashed; }
+.cover-preview:hover { border-color: var(--accent); }
+.cover-empty { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); text-shadow: 0 1px 3px rgba(0,0,0,.5); }
+.gif-badge { position: absolute; left: 10px; bottom: 10px; background: rgba(0,0,0,.65); color: #fff; font-size: 10px; font-weight: 800; letter-spacing: .08em; padding: 2px 6px; border-radius: 4px; }
+.cover-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.profile-cover { width: 100%; aspect-ratio: 4 / 1; max-width: 100%; border-radius: var(--radius); overflow: hidden; background: var(--bg-2); margin-bottom: 4px; }
+.profile-cover img { width: 100%; height: 100%; object-fit: cover; }
+.profile-cover-empty { display: grid; place-items: center; height: 64px; border: 1px dashed var(--line-2); border-radius: var(--radius); color: var(--muted); font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.profile-cover-empty:hover { color: var(--text); border-color: var(--accent); }
+.profile-head.with-cover .profile-avatar { margin-top: -70px; }
+.profile-head.with-cover .avatar-ring { box-shadow: 0 0 0 5px var(--bg); }
+
+.club-hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.club-hero.with-cover::after { background: linear-gradient(180deg, rgba(0,0,0,.1), rgba(20,24,28,.85)); }
+.club-card.with-cover { padding-top: 0; overflow: hidden; }
+.club-card-cover { display: block; margin: 0 -16px; height: 84px; overflow: hidden; }
+.club-card-cover img { width: 100%; height: 100%; object-fit: cover; }
+
+@media (max-width: 760px) {
+  .profile-cover { aspect-ratio: 3 / 1; }
+  .profile-head.with-cover .profile-avatar { margin-top: -44px; }
+}

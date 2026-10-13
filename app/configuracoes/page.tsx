@@ -6,12 +6,14 @@ import { Avatar } from "@/components/Avatar";
 import { IconLock } from "@/components/Icons";
 import { incomingRequests } from "@/lib/selectors";
 import { useStore } from "@/lib/store";
-import { fileToDataUrl } from "@/lib/util";
+import { mediaToDataUrl } from "@/lib/util";
+import { CoverPicker } from "@/components/CoverPicker";
 
 export default function SettingsPage() {
   const { state, me, actions } = useStore();
   const router = useRouter();
-  const [form, setForm] = useState({ name: me.name, username: me.username, bio: me.bio, avatar: me.avatar, isPrivate: me.isPrivate });
+  const [form, setForm] = useState({ name: me.name, username: me.username, bio: me.bio, avatar: me.avatar, cover: me.cover, isPrivate: me.isPrivate });
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pending = incomingRequests(state).length;
 
@@ -29,22 +31,32 @@ export default function SettingsPage() {
           router.push(`/u/${form.username.trim().toLowerCase()}`);
         }}
       >
+        <CoverPicker label="Capa do perfil" value={form.cover} onChange={(cover) => setForm({ ...form, cover })} />
+
         <div className="settings-avatar">
           <Avatar user={{ ...me, avatar: form.avatar, name: form.name || me.name }} size={72} />
           <div>
             <strong>{form.username}</strong>
             <label className="link-btn">
-              Alterar foto do perfil
+              Alterar foto do perfil (foto ou GIF)
               <input
                 type="file"
                 accept="image/*"
                 hidden
                 onChange={async (e) => {
                   const f = e.target.files?.[0];
-                  if (f) setForm({ ...form, avatar: await fileToDataUrl(f, 320) });
+                  e.target.value = "";
+                  if (!f) return;
+                  try {
+                    setAvatarError(null);
+                    setForm({ ...form, avatar: await mediaToDataUrl(f, 320) });
+                  } catch (err) {
+                    setAvatarError((err as Error).message);
+                  }
                 }}
               />
             </label>
+            {avatarError && <span className="form-error">{avatarError}</span>}
             {form.avatar && (
               <button type="button" className="link-btn muted" onClick={() => setForm({ ...form, avatar: undefined })}>
                 Remover foto

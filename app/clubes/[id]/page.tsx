@@ -98,7 +98,11 @@ export default function ClubPage() {
 
   return (
     <div className="club-page">
-      <header className="club-hero" style={{ background: `linear-gradient(120deg, ${a}, ${b})` }}>
+      <header className={cx("club-hero", club.cover && "with-cover")} style={{ background: `linear-gradient(120deg, ${a}, ${b})` }}>
+        {club.cover && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="club-hero-img" src={club.cover} alt="" />
+        )}
         <div className="club-hero-inner">
           <ClubBadge club={club} size={84} />
           <div className="club-hero-text">

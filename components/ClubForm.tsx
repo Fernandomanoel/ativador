@@ -7,6 +7,7 @@ import type { ClubInput } from "@/lib/store";
 import type { ClubFocus } from "@/lib/types";
 import { cx } from "@/lib/util";
 import { CLUB_TONES } from "./ClubParts";
+import { CoverPicker } from "./CoverPicker";
 
 export const emptyClub = (): ClubInput => ({
   name: "",
@@ -54,8 +55,15 @@ export function ClubForm({ initial, minMembers = 2, submitLabel, onSubmit }: { i
         <textarea rows={2} maxLength={300} value={c.description} onChange={(e) => set("description", e.target.value)} placeholder="Sobre o que é o clube?" />
       </label>
 
+      <CoverPicker
+        label="Capa do clube"
+        value={c.cover}
+        onChange={(cover) => set("cover", cover)}
+        fallback={`linear-gradient(120deg, ${CLUB_TONES[c.tone % CLUB_TONES.length][0]}, ${CLUB_TONES[c.tone % CLUB_TONES.length][1]})`}
+      />
+
       <fieldset>
-        <legend>Cor</legend>
+        <legend>Cor {c.cover && <span className="muted small">(usada no selo e quando não há capa)</span>}</legend>
         <div className="tone-row">
           {CLUB_TONES.map(([a, b], i) => (
             <button

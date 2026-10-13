@@ -39,7 +39,13 @@ export function ClubCard({ club }: { club: Club }) {
   const isMember = !!memberOf(state, club.id, me.id);
   const full = members.length >= club.maxMembers;
   return (
-    <Link href={`/clubes/${club.id}`} className="club-card">
+    <Link href={`/clubes/${club.id}`} className={cx("club-card", club.cover && "with-cover")}>
+      {club.cover && (
+        <span className="club-card-cover">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={club.cover} alt="" />
+        </span>
+      )}
       <div className="club-card-head">
         <ClubBadge club={club} size={48} />
         <div>

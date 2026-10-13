@@ -49,7 +49,19 @@ export default function ProfilePage() {
 
   return (
     <div className="profile">
-      <header className="profile-head">
+      {user.cover ? (
+        <div className="profile-cover">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={user.cover} alt={`Capa de ${user.name}`} />
+        </div>
+      ) : (
+        isMe && (
+          <Link href="/configuracoes" className="profile-cover-empty">
+            + Personalizar com uma capa (foto ou GIF)
+          </Link>
+        )
+      )}
+      <header className={cx("profile-head", user.cover && "with-cover")}>
         <div className="profile-avatar">
           <Avatar user={user} size={150} ring />
         </div>

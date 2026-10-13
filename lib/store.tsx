@@ -54,7 +54,7 @@ export interface Actions {
   replyClubPost(postId: string, body: string): void;
   createPost(p: Pick<Post, "image" | "caption" | "bookId">): string;
   deletePost(postId: string): void;
-  updateProfile(patch: Partial<Pick<User, "name" | "username" | "bio" | "avatar" | "isPrivate">>): string | null;
+  updateProfile(patch: Partial<Pick<User, "name" | "username" | "bio" | "avatar" | "cover" | "isPrivate">>): string | null;
   markAllRead(): void;
   reset(): void;
   toast(msg: string): void;
